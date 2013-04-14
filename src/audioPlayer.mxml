@@ -1,0 +1,237 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mx:Application xmlns:mx="http://www.adobe.com/2006/mxml" layout="absolute" minWidth="10" minHeight="10"
+				initialize="application1_initializeHandler(event)">
+<mx:Script>
+	<![CDATA[
+		import flash.external.ExternalInterface;
+		
+		import mx.events.FlexEvent;
+		import mx.events.VideoEvent;
+
+		/**
+		 * html5のaudioタグがmp4を扱えなかった場合に動作する動作
+		 * 欲しい動作
+		 * イベント編：
+		 * 　loadeddata(データ読み込み完了時動作)
+		 * 　play(再生開始時動作)
+		 * 　pause(停止時動作)
+		 * 　timeupdate(再生時間更新動作)
+		 * 　ended(再生終了時動作)
+		 * メソッド編：
+		 * 　pause()(停止)
+		 * 　play()(再生)
+		 * 　addEventListener(イベント名, 関数)(javascriptイベント付加)
+		 * 　removeEventListener(イベント名, 関数)(javascriptイベント削除)
+		 * 　setAttribute("プロパティー名", 値)
+		 * 　removeAttribute("プロパティー名")
+		 * プロパティー編：
+		 * 　playbackRate(再生速度(実装不可))
+		 * 　src(再生URL)
+		 * 　loaded(読み込み完了確認)
+		 * 　paused(停止確認)
+		 * 　currentTime(再生位置確認(参照時)とseek用(代入時))
+		 * 　duration(データ長(参照時))
+		 * 
+		 * 　loop(繰り返しを実行するかどうか(ただしくはこれはDOMのプロパティー))
+		 */
+		protected function application1_initializeHandler(event:FlexEvent):void
+		{
+			try {
+				// javascriptとして必要なものを準備しておく。
+				ExternalInterface.call(javascriptSetup);
+				
+				// mp4はvideoPlayerにやらせる。
+				player.addEventListener(VideoEvent.COMPLETE, function(e:VideoEvent):void {
+					fireEvent("ended");
+				});
+				player.addEventListener(VideoEvent.STATE_CHANGE, function(e:VideoEvent):void {
+					switch(e.state) {
+						case "playing":
+							// 開始した場合
+							fireEvent("play");
+							break;
+						case "loading":
+							// 読み込みを実行して開始できるようになった場合
+							fireEvent("loadeddata");
+							break;
+						case "stopped":
+							// 再生がとまった場合
+							fireEvent("stopped");
+							break;
+						case "paused":
+							// 中途停止した場合
+							fireEvent("paused");
+							break;
+						case "rewinding":
+							fireEvent("rewind");
+							break;
+					}
+				});
+				player.addEventListener(VideoEvent.PLAYHEAD_UPDATE, function(e:VideoEvent):void {
+					this.updateTime();
+				});
+				// とりあえず、イベントを取得する必要がありそう。
+				// 各メソッド
+				ExternalInterface.addCallback("play", function():void {
+					try {
+						player.play();
+					}
+					catch(e:Error) {
+					}
+				});
+				ExternalInterface.addCallback("pause", function():void {
+					try {
+						player.pause();
+					}
+					catch(e:Error) {
+					}
+				});
+				ExternalInterface.addCallback("stop", function():void {
+					try {
+						player.stop();
+					}
+					catch(e:Error) {
+					}
+				});
+				ExternalInterface.addCallback("src", function(data:String):String {
+					player.source = data;
+					return data;
+				});
+				ExternalInterface.addCallback("setCurrentTime", function(time:Number):Number {
+					player.playheadTime = time;
+					return player.playheadTime;
+				});
+				ExternalInterface.addCallback("getCurrentData", function():void{
+					updateData();
+				});
+			}
+			catch(e:Error) {
+				info(e);
+			}
+		}
+		protected function updateTime():void {
+			ExternalInterface.call("audioPlayer.updateData", {
+				currentTime: player.playheadTime,
+				totalTime: player.totalTime
+			});
+		}
+		protected function updateData():void {
+			ExternalInterface.call("audioPlayer.updateData", {
+				currentBytes: player.bytesLoaded,
+				totalBytes: player.bytesTotal,
+				isplaying: player.playing
+			});
+		}
+		protected function fireEvent(name:String):void {
+			ExternalInterface.call("audioPlayer.updateData", {
+				event: name
+			});
+		}
+		protected function info(msg:*):void {
+			ExternalInterface.call("console.log", msg);
+		}
+		protected function error(msg:*):void {
+			ExternalInterface.call("console.err", msg);
+		}
+	]]>
+</mx:Script>
+	<mx:String id="javascriptSetup">
+		<![CDATA[
+function(){
+	// javascriptの初期化動作
+	var Player = function() {
+		this.initialize.apply(this, arguments);
+		// とりあえず変更されてもいいけど、変更を許可しないようにしてみる。テスト
+		Object.defineProperty(this, 'playbackRate', {
+			value: 1,
+			enumerable: false,
+			writable: false,
+			configurable: true
+		});
+	};
+	Player.prototype = {
+		swfPlayer: document.getElementById("audioPlayer"),
+		// 初期化動作
+		initialize: function() {
+		},
+		// flashからのデータの更新動作
+		updateData: function(data) {
+			// 各種パラメーターを更新します。
+			console.log(data);
+		},
+		// プロパティー参照
+		playbackRate: 1,
+		src: undefined,
+		loaded: undefined,
+		paused: undefined,
+		currentTime: undefined,
+		duration: undefined,
+		totalSize: undefined,
+		// イベント動作
+		events: {},
+		// 追加
+		addEventListener: function(name, func) {
+			if(!(this.events[name] instanceof Array)) {
+				this.events[name] = [];
+			}
+			// 同じ関数の追加は禁止しておく。
+			var index = this.events[name].indexOf(func);
+			if(index == -1) {
+				// 要素を追加しておく。
+				this.events[name].push(func);
+				return true;
+			}
+			else {
+				return false;
+			}
+		},
+		// 削除
+		removeEventListener: function(name, func) {
+			if(!(this.events[name] instanceof Array)) {
+				return;
+			}
+			var index = this.events[name].indexOf(func);
+			if(index == -1) {
+				return;
+			}
+			// 要素を削除しておく。
+			this.events[name].splice(index, 1);
+		},
+		// 属性動作
+		attributes: {},
+		setAttribute: function(name, value) {
+			this.attributes[name] = value;
+		},
+		removeAttribute: function(name) {
+			delete this.attributes[name];
+		},
+		// 再生動作
+		play: function() {
+			this.swfPlayer.play();
+		},
+		// 一時停止する
+		pause: function() {
+			this.swfPlayer.pause();
+		},
+		// 停止する
+		stop: function() {
+			this.swfPlayer.stop();
+		},
+		// データをセットする。
+		setSrc: function(source) {
+			this.src = this.swfPlayer.src(source);
+		},
+		setCurrentTime: function(time) {
+			this.currentTime = this.swfPlayer.setCurrentTime(time);
+		},
+		update: function() {
+			this.swfPlayer.getCurrentData();
+		}
+	};
+	audioPlayer = new Player();
+}
+		]]>
+	</mx:String>
+	<mx:VideoDisplay id="player" alpha="1" autoPlay="false">
+	</mx:VideoDisplay>
+</mx:Application>
