@@ -29,17 +29,15 @@ flashがたまたまmp4の再生可能になっているので、audioタグで�
 　pause
 　timeupdate
 　ended
+　ready
 
 メソッド
-　pause()
-　play()
-　addEventListener(name, func)
-　removeEventListener(name, func)
-　setAttribute(name, data)
-　removeAttribute(name)
-
+　doPause()
+　doPlay()
+　doStop()
+　setSource(url:String)
+　setCurrentTime(time:Number)
 プロパティー
-　playbackRate (未サポート)
 　src
 　loaded
 　paused

@@ -1,0 +1,316 @@
+<html lang="en">
+<head>
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+	<script src="http://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+</head>
+<body>
+	<script language="JavaScript" type="text/javascript">
+<!--
+var console;
+if(!console) {
+	console = {};
+}
+if(!console.log) {
+	console.log = function() {
+	};
+}
+var audioPlayer;
+$(function(){
+	var Player = function() {
+		this.initialize.apply(this, arguments);
+	};
+	Player.prototype = {
+		audioTag: false,
+		player: null,
+		ready: undefined,
+		src: undefined,
+		paused: undefined,
+		currentTime: undefined,
+		duration: undefined,
+		currentBytes: undefined,
+		totalBytes: undefined,
+		isLoaded: function() {
+			if(this.audioTag) {
+				return true;
+			}
+			else {
+				return this.totalBytes == this.currentBytes;
+			}
+		},
+		isPaused: function() {
+			if(this.audioTag) {
+				return this.player.paused;;
+			}
+			else {
+				return this.paused;
+			}
+		},
+		getSrc: function() {
+			return this.src;
+		},
+		getCurrentTime: function() {
+			if(this.audioTag) {
+				return this.player.currentTime;
+			}
+			else {
+				return this.currentTime;
+			}
+		},
+		getDuration: function() {
+			if(this.audioTag) {
+				return this.player.duration;
+			}
+			else {
+				return this.duration;
+			}
+			
+		},
+		getCurrentBytes: function() {
+			if(this.audioTag) {
+				return 0;
+			}
+			else {
+				return this.currentBytes;
+			}
+		},
+		getTotalBytes: function() {
+			if(this.audioTag) {
+				return 0;
+			}
+			else {
+				return this.totalBytes;
+			}
+		},
+		events: {},
+		attributes: {},
+		initialize: function(swfFlg) {
+			if(!swfFlg) {
+				try {
+					var audio = new Audio();
+					if(audio.canPlayType("audio/mp4") != "") {
+						// 再生可能な場合 audioタグで再生させる。
+						this.audioTag = true;
+						this.player = audio;
+						// イベントをつけておく。
+						return;
+					}
+				}
+				catch(e) {
+				}
+			}
+			this.audioTag = false;
+			var userAgent = window.navigator.userAgent.toLowerCase();
+			if(userAgent.indexOf('msie') != -1) {
+				this.player = $("#audioPlayer")[0];
+			}
+			else {
+				this.player = $("embed[name=embedAudioPlayer]")[0];
+			}
+		},
+		// これはflashからのみ呼び出されます。
+		updateData: function(data) {
+			if(data["event"] != undefined) {
+				switch(data["event"]) {
+					case "stopped":
+						data["event"] = "pause";
+					case "loadeddata":
+					case "play":
+					case "ended":
+						var funcList = this.events[data["event"]];
+						if(funcList instanceof Array) {
+							for(var i = 0;i < funcList.length;i ++) {
+								var func = funcList[i];
+								func();
+							}
+						}
+						return;
+					case "ready":
+						this.ready = true;
+						return;
+					default:
+				}
+			}
+			else {
+				if(data["isplaying"] != undefined) {
+					this.paused = !(data["isplaying"]);
+				}
+				if(data["currentTime"] != undefined) {
+					this.currentTime = data["currentTime"];
+					// timeupdate
+					var funcList = this.events["timeupdate"];
+					if(funcList instanceof Array) {
+						for(var i = 0;i < funcList.length;i ++) {
+							var func = funcList[i];
+							func();
+						}
+					}
+				}
+				if(data["totalTime"] != undefined) {
+					this.duration = data["totalTime"];
+				}
+				if(data["currentBytes"] != undefined) {
+					this.currentBytes = data["currentBytes"];
+				}
+				if(data["totalBytes"] != undefined) {
+					this.totalBytes = data["totalBytes"];
+				}
+			}
+		},
+		// 追加
+		addEventListener: function(name, func) {
+			if(this.audioTag) {
+				this.player.addEventListener(name, func);
+				return true;
+			}
+			else {
+				if(!(this.events[name] instanceof Array)) {
+					this.events[name] = [];
+				}
+				// 同じ関数の追加は禁止しておく。
+				var index = this.events[name].indexOf(func);
+				if(index == -1) {
+					// 要素を追加しておく。
+					this.events[name].push(func);
+					return true;
+				}
+				else {
+					return false;
+				}
+			}
+		},
+		// 削除
+		removeEventListener: function(name, func) {
+			if(this.audioTag) {
+				this.player.addEventListener(name, func);
+			}
+			else {
+				if(!(this.events[name] instanceof Array)) {
+					return;
+				}
+				var index = this.events[name].indexOf(func);
+				if(index == -1) {
+					return;
+				}
+				// 要素を削除しておく。
+				this.events[name].splice(index, 1);
+			}
+		},
+		setAttribute: function(name, value) {
+			this.attributes[name] = value;
+		},
+		removeAttribute: function(name) {
+			delete this.attributes[name];
+		},
+		// 再生動作
+		play: function() {
+			if(this.audioTag) {
+				this.player.play();
+			}
+			else {
+				var _this = this;
+				var setData = function() {
+					if(!_this.ready) {
+						setTimeout(setData, 100);
+					}
+					else {
+						_this.player.doPlay();
+					}
+				}
+				setData();
+			}
+		},
+		// 一時停止する
+		pause: function() {
+			if(this.audioTag) {
+				this.player.pause();
+			}
+			else {
+				try {
+					this.player.doPause();
+				}
+				catch(e) {
+				}
+			}
+		},
+		// 停止する
+		stop: function() {
+			if(this.audioTag) {
+				this.player.pause();
+				this.player.currentTime = 0;
+			}
+			else {
+				try {
+					this.player.doStop();
+				}
+				catch(e) {
+				}
+			}
+		},
+		// データをセットする。
+		setSrc: function(source) {
+			if(this.audioTag) {
+				this.player.src = source;
+			}
+			else {
+				var _this = this;
+				var setData = function() {
+					if(!_this.ready) {
+						setTimeout(setData, 100);
+					}
+					else {
+						_this.player.setSource(source);
+					}
+				}
+				setData();
+			}
+			this.src = source;
+		},
+		setCurrentTime: function(time) {
+			if(this.audioTag) {
+				this.player.currentTime = time;
+			}
+			else {
+				var _this = this;
+				var setData = function() {
+					if(!_this.ready) {
+						setTimeout(setData, 100);
+					}
+					else {
+						_this.player.setCurrentTime(time);
+					}
+				}
+				setData();
+			}
+			this.currentTime = time;
+		}
+	};
+	// 1をいれておくと強制flash使用
+	audioPlayer = new Player(1);
+	// コントロールの動作
+	$("#play").click(function(){
+		audioPlayer.play();
+	});
+	$("#set").click(function(){
+		audioPlayer.setSrc("http://tekitou/test.mp4");
+	});
+	$("#pause").click(function(){
+		audioPlayer.pause();
+	});
+	$("#stop").click(function(){
+		audioPlayer.stop();
+	});
+});
+// -->
+	</script>
+	<div style="position:absolute;left:-200px;top:-200px;">
+		<object id="audioPlayer" name="audioPlayer" classid="clsid:d27cdb6e-ae6d-11cf-96b8-444553540000" width="100" height="100" codebase="http://active.macromedia.com/flash7/cabs/ swflash.cab#version=9,0,0,0">
+			<param name="movie" value="audioPlayer.swf" />
+			<embed src="audioPlayer.swf" name="embedAudioPlayer" width="100" height="100" play="true" loop="true" quality="high" pluginspage="http://www.macromedia.com/shockwave/download/index.cgi?P1_Prod_Version=ShockwaveFlash"></embed>
+		</object>
+	</div>
+	<a id="set">set</a>
+	<a id="play">play</a>
+	<a id="pause">pause</a>
+	<a id="stop">stop</a>
+</body>
+</html>
