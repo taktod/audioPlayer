@@ -34,19 +34,13 @@
 		 * 
 		 * 　loop(繰り返しを実行するかどうか(ただしくはこれはDOMのプロパティー))
 		 */
+		private var loop:Boolean = false;
+		private var target:String = ""; // 現在の読み込み対象ファイル保存
+		private var startPos:Number = 0;
 		protected function updateTime():void {
 			ExternalInterface.call("audioPlayer.updateData", {
 				currentTime: player.playheadTime,
 				totalTime: player.totalTime,
-				currentBytes: player.bytesLoaded,
-				totalBytes: player.bytesTotal,
-				isplaying: player.playing
-			});
-		}
-		protected function updateData():void {
-			ExternalInterface.call("audioPlayer.updateData", {
-				currentBytes: player.bytesLoaded,
-				totalBytes: player.bytesTotal,
 				isplaying: player.playing
 			});
 		}
@@ -58,9 +52,6 @@
 		protected function info(msg:*):void {
 			log.text += msg.toString() + "\n";
 		}
-		protected function error(msg:*):void {
-		}
-
 		protected function application1_applicationCompleteHandler(event:FlexEvent):void
 		{
 			try {
@@ -70,7 +61,15 @@
 				info("start...");
 				// mp4はvideoPlayerにやらせる。
 				player.addEventListener(VideoEvent.COMPLETE, function(e:VideoEvent):void {
-					fireEvent("ended");
+					if(loop) {
+						if(startPos != 0) { // 始めから再生していなかった場合は、オリジナルアクセスをやり直してロードしておく。
+							player.source = target;
+						}
+						player.play();
+					}
+					else {
+						fireEvent("ended");
+					}
 				});
 				player.addEventListener(VideoEvent.STATE_CHANGE, function(e:VideoEvent):void {
 					switch(e.state) {
@@ -126,13 +125,33 @@
 				});
 				ExternalInterface.addCallback("setSource", function(data:String):String {
 					info("src..." + data);
+					startPos = 0;
+					target = data;
 					player.source = data;
 					player.load();
 					return data;
 				});
 				ExternalInterface.addCallback("setCurrentTime", function(time:Number):Number {
-					player.playheadTime = time;
-					return player.playheadTime;
+					// この計算でだいたい読み込みおわった場所がわかるので、ここから読み込みがおわっているデータを調べればよさそう。
+					info((player.bytesLoaded / player.bytesTotal * player.totalTime) + ":" + time);
+					if(time < 0) { // 負の数の場合は応答を返さない
+						return 0;
+					}
+					if(player.bytesLoaded / player.bytesTotal * player.totalTime > time && time > startPos) {
+						player.playheadTime = time;
+						return player.playheadTime;
+					}
+					else {
+						startPos = time;
+						player.stop();
+						player.source = target + "?start=" + int(time * 1000);
+						player.play();
+						return time;
+					}
+				});
+				ExternalInterface.addCallback("setLoop", function(flg:Boolean):Boolean {
+					loop = flg;
+					return loop;
 				});
 				fireEvent("ready");
 			}
